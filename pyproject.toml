@@ -1,0 +1,17 @@
+[project]
+name = "googlefitstatistics"
+version = "0.1.0"
+description = "Exploratory analysis of a Google Fit export from Google Takeout"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.3",
+    "pandas>=3.0.6",
+]
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+    "nbstripout>=0.9.1",
+]

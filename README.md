@@ -20,12 +20,28 @@ No personal data is included in this repository — bring your own export.
 
    Folder and column names may be in another language; the notebook normalizes them.
 
-2. Install the dependencies and open the notebook:
+2. Create the environment with [uv](https://docs.astral.sh/uv/) (it installs Python 3.12 if
+   needed and the exact versions pinned in `uv.lock`), then open the notebook:
 
    ```bash
-   pip install pandas numpy matplotlib jupyter
-   jupyter notebook google_fit_exploration.ipynb
+   uv sync
+   uv run jupyter lab google_fit_exploration.ipynb
    ```
+
+   To use VS Code instead, select `.venv` as the notebook kernel.
+
+3. If you plan to commit, enable the output-stripping git filter once per clone so no
+   personal results end up in the repository:
+
+   ```bash
+   uv run nbstripout --install
+   ```
+
+To run the notebook headless (the executed copy goes to `out/`, which is not tracked):
+
+```bash
+uv run jupyter nbconvert --to notebook --execute google_fit_exploration.ipynb --output-dir out
+```
 
 ## What the notebook covers
 
