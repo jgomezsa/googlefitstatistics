@@ -4,14 +4,18 @@ Guidance for Claude Code when working in this repository.
 
 ## Project
 
-Exploratory analysis of a Google Fit export from Google Takeout. Everything lives in one
-Jupyter notebook, [google_fit_exploration.ipynb](google_fit_exploration.ipynb); there is no
-package, test suite or build step.
+Exploratory analysis of personal Google data in two Jupyter notebooks; there is no package,
+test suite or build step.
+
+- [google_fit_exploration.ipynb](google_fit_exploration.ipynb): Google Fit export from Takeout
+  (`Takeout/Fit/`). Most of this file is about this notebook.
+- [timeline_heatmap.ipynb](timeline_heatmap.ipynb): Google Maps Timeline export (`Timeline/`),
+  drawn as maps (world, main region, busiest city, interactive Leaflet heatmap).
 
 ## Environment (uv)
 
 Managed with uv: Python pinned in `.python-version` (3.12), dependencies in `pyproject.toml`,
-exact versions locked in `uv.lock` (commit both). Runtime deps: `pandas numpy matplotlib`;
+exact versions locked in `uv.lock` (commit both). Runtime deps: `pandas numpy matplotlib contextily`;
 dev group: `jupyter nbstripout`.
 
 ```bash
@@ -25,9 +29,31 @@ uv run jupyter nbconvert --to notebook --execute google_fit_exploration.ipynb --
 After changing notebook code, run the headless command above to check it still executes.
 Note: pandas is 3.x (copy-on-write, string dtype by default), so avoid chained assignment.
 
-The data (`Takeout/Fit/`) is **personal and never committed** — `.gitignore` excludes
-`Takeout/`, zips, `*.csv`, `*.tcx` and `*.json`. The notebook finds it by walking up from
-the working directory (`find_fit_root()`).
+The data (`Takeout/Fit/`, `Timeline/`) is **personal and never committed** — `.gitignore`
+excludes both folders, zips, `*.csv`, `*.tcx` and `*.json`. The notebooks find it by walking
+up from the working directory (`find_fit_root()`, `find_timeline_files()`).
+
+## Timeline notebook
+
+- The export file name is localized (`Timeline.json`, `Cronología.json`, …): never hardcode
+  it. `find_timeline_files()` takes every `*.json` in a folder whose normalized name is in
+  `TIMELINE_DIRS`, and `load_timeline()` detects the format by content: Android on-device
+  (`semanticSegments` + `rawSignals`), iOS (top-level list, `geo:lat,lng`), legacy
+  `Records.json` (`latitudeE7`).
+- Coordinates are strings like `"40.1°, -3.7°"`; `parse_latlng()` handles every variant.
+- Every point is one row of `pts` (`time, lat, lon, source, accuracy_m`), with `source` one of
+  `path` / `visit` / `trip` / `raw`. Raw fixes with accuracy over 500 m are dropped.
+- Basemap: `Esri.WorldGrayCanvas` (no API key). CARTO tiles now require a key, so don't use
+  them. Static maps are drawn in Web Mercator via `to_mercator()`; set the extent *after*
+  plotting and before `ctx.add_basemap`.
+- Interactive map: [templates/timeline_heatmap.html](templates/timeline_heatmap.html) is a
+  standalone Leaflet + leaflet.heat page with live sliders. The notebook replaces its
+  `/*__DATA__*/null` placeholder with `{cells: [[lat, lon, count]], points, center, zoom, settings}`
+  and writes `out/timeline_heatmap.html` (gitignored). The template overrides
+  `L.HeatLayer.prototype._redraw` to add the `compression` root on top of the stock algorithm.
+  Keep personal data out of the template; it is committed.
+- OpenStreetMap's own tiles return "Access blocked" from a locally opened HTML file (no
+  Referer), so use Esri tiles there too.
 
 ## Privacy rules
 

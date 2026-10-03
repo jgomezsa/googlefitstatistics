@@ -1,5 +1,6 @@
 # Personal Google Takeout data — never commit
 Takeout/
+Timeline/
 Takeout*.zip
 *.zip
 *.csv

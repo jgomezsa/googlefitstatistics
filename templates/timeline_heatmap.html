@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timeline Heatmap</title>
+<!-- Template filled in by timeline_heatmap.ipynb: the data placeholder below is replaced
+     with the visited cells. Layout and controls inspired by
+     https://github.com/ry-li/google-maps-timeline-heatmap -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<style>
+  :root {
+    --panel-bg: rgba(17, 24, 39, 0.94);
+    --panel-border: #374151;
+    --text: #e5e7eb;
+    --text-muted: #9ca3af;
+    --accent: #3b82f6;
+    --button-bg: #374151;
+  }
+  html, body { height: 100%; margin: 0; background: #1a1a1a; }
+  body { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text); }
+  #map { position: absolute; inset: 0; background: #1a1a1a; }
+  .labels-pane { pointer-events: none; }
+
+  #panel {
+    position: absolute; top: 12px; right: 12px; z-index: 1000;
+    width: 260px; max-width: calc(100vw - 24px);
+    background: var(--panel-bg); border: 1px solid var(--panel-border);
+    border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(6px);
+  }
+  #panel-header {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    cursor: pointer; user-select: none;
+  }
+  #panel-header h1 { font-size: 14px; margin: 0; flex: 1; }
+  #count {
+    font: 11px ui-monospace, monospace; color: var(--text-muted);
+    background: var(--button-bg); padding: 2px 6px; border-radius: 4px;
+  }
+  #chevron { transition: transform 0.2s; color: var(--text-muted); }
+  #panel.collapsed #chevron { transform: rotate(180deg); }
+  #panel.collapsed #panel-body { display: none; }
+  #panel-body { padding: 4px 12px 12px; border-top: 1px solid var(--panel-border); }
+
+  .section { margin-top: 12px; }
+  .section-title {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 6px;
+  }
+  .row { display: flex; justify-content: space-between; margin-top: 8px; }
+  .row output { font: 11px ui-monospace, monospace; color: var(--accent); }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+  .hint { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+
+  .buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .buttons button, #fit {
+    font: inherit; font-size: 12px; color: var(--text); background: var(--button-bg);
+    border: 1px solid transparent; border-radius: 6px; padding: 6px 0; cursor: pointer;
+  }
+  .buttons button.active { background: var(--accent); color: #fff; }
+  #fit { width: 100%; margin-top: 12px; }
+  .buttons button:hover, #fit:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="panel">
+  <div id="panel-header" title="Show / hide controls">
+    <h1>Timeline heatmap</h1>
+    <span id="count"></span>
+    <span id="chevron">&#9650;</span>
+  </div>
+  <div id="panel-body">
+    <div class="section">
+      <div class="section-title">Heatmap</div>
+      <div class="row"><label for="radius">Radius</label><output id="radius-val"></output></div>
+      <input type="range" id="radius" min="2" max="50">
+      <div class="row"><label for="blur">Blur</label><output id="blur-val"></output></div>
+      <input type="range" id="blur" min="5" max="50">
+      <div class="row"><label for="intensity">Intensity</label><output id="intensity-val"></output></div>
+      <input type="range" id="intensity" min="1" max="18">
+      <div class="hint">Zoom level where heat is at full strength. Lower = hotter.</div>
+      <div class="row"><label for="compression">Compression</label><output id="compression-val"></output></div>
+      <input type="range" id="compression" min="1" max="5" step="0.1">
+      <div class="hint">Root applied to the heat: 1 = raw, 2 = square root. Higher brings rarely visited places closer to the busiest ones.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Base map</div>
+      <div class="buttons">
+        <button data-base="dark">Dark</button>
+        <button data-base="light">Light</button>
+        <button data-base="streets">Streets</button>
+      </div>
+    </div>
+    <button id="fit">Show all points</button>
+  </div>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;   // {cells: [[lat, lon, count], ...], points, center, zoom, settings}
+
+// --- Base maps: Esri tiles need no API key and work from a local file. ---
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+const esri = (service, opts) => L.tileLayer(ESRI + service + '/MapServer/tile/{z}/{y}/{x}',
+  Object.assign({maxZoom: 16, attribution: 'Tiles &copy; Esri'}, opts));
+const BASES = {
+  dark:    [esri('Canvas/World_Dark_Gray_Base'), esri('Canvas/World_Dark_Gray_Reference', {pane: 'labels'})],
+  light:   [esri('Canvas/World_Light_Gray_Base'), esri('Canvas/World_Light_Gray_Reference', {pane: 'labels'})],
+  streets: [esri('World_Street_Map', {maxZoom: 19})],
+};
+
+const map = L.map('map', {zoomControl: false, maxZoom: 19, worldCopyJump: true})
+  .setView(DATA.center, DATA.zoom);
+L.control.zoom({position: 'bottomright'}).addTo(map);
+L.control.scale({position: 'bottomleft'}).addTo(map);
+// Place labels above the heat so street and town names stay readable.
+map.createPane('labels');
+map.getPane('labels').style.zIndex = 650;
+map.getPane('labels').classList.add('labels-pane');
+
+let activeBase = null;
+function setBase(name) {
+  if (activeBase) BASES[activeBase].forEach(l => map.removeLayer(l));
+  BASES[name].forEach(l => l.addTo(map));
+  activeBase = name;
+  document.querySelectorAll('[data-base]').forEach(b => b.classList.toggle('active', b.dataset.base === name));
+}
+
+// --- Heat layer -------------------------------------------------------------
+// Same algorithm as leaflet.heat 0.2.0 (points summed per screen cell, scaled down
+// by 2^(maxZoom - zoom), capped at `max`), plus one step: the summed heat is
+// normalised to [0, 1] and raised to 1/compression before drawing. Rarely visited
+// places get brighter while the busiest ones stay at the top colour.
+L.HeatLayer.prototype._redraw = function () {
+  if (!this._map) return;
+  const o = this.options, map = this._map;
+  const r = this._heat._r, size = map.getSize();
+  const bounds = new L.Bounds(L.point([-r, -r]), size.add([r, r]));
+  const max = o.max === undefined ? 1 : o.max;
+  const v = 1 / Math.pow(2, Math.max(0, Math.min(o.maxZoom - map.getZoom(), 12)));
+  const step = r / 2, pane = map._getMapPanePos();
+  const offX = pane.x % step, offY = pane.y % step;
+  const grid = new Map(), data = [];
+  for (const ll of this._latlngs) {
+    const p = map.latLngToContainerPoint(ll);
+    if (!bounds.contains(p)) continue;
+    const key = Math.floor((p.x - offX) / step) * 100000 + Math.floor((p.y - offY) / step);
+    const k = (ll[2] === undefined ? 1 : ll[2]) * v;
+    const c = grid.get(key);
+    if (c) {
+      c[0] = (c[0] * c[2] + p.x * k) / (c[2] + k);
+      c[1] = (c[1] * c[2] + p.y * k) / (c[2] + k);
+      c[2] += k;
+    } else {
+      grid.set(key, [p.x, p.y, k]);
+    }
+  }
+  const root = 1 / (o.compression || 1);
+  for (const c of grid.values()) {
+    const heat = Math.pow(Math.min(c[2] / max, 1), root) * max;
+    data.push([Math.round(c[0]), Math.round(c[1]), heat]);
+  }
+  this._heat.max(max);
+  this._heat.data(data).draw(o.minOpacity);
+  this._frame = null;
+};
+
+const S = DATA.settings;
+// Each cell is [lat, lon, count]; every point contributes `pointWeight` of heat.
+const latlngs = DATA.cells.map(c => [c[0], c[1], c[2] * S.pointWeight]);
+const heat = L.heatLayer(latlngs, {
+  radius: S.radius, blur: S.blur, maxZoom: S.intensity, max: 1,
+  minOpacity: S.minOpacity, compression: S.compression, gradient: S.gradient,
+}).addTo(map);
+
+// --- Controls ---------------------------------------------------------------
+const controls = {radius: 'radius', blur: 'blur', intensity: 'maxZoom', compression: 'compression'};
+for (const [id, option] of Object.entries(controls)) {
+  const input = document.getElementById(id), out = document.getElementById(id + '-val');
+  input.value = S[id];
+  out.textContent = S[id];
+  input.addEventListener('input', () => {
+    const value = parseFloat(input.value);
+    out.textContent = input.value;
+    heat.setOptions({[option]: value});   // setOptions also redraws
+  });
+}
+document.querySelectorAll('[data-base]').forEach(b => b.addEventListener('click', () => setBase(b.dataset.base)));
+document.getElementById('panel-header').addEventListener('click',
+  () => document.getElementById('panel').classList.toggle('collapsed'));
+document.getElementById('fit').addEventListener('click',
+  () => map.fitBounds(L.latLngBounds(DATA.cells.map(c => [c[0], c[1]])), {padding: [40, 40]}));
+document.getElementById('count').textContent = DATA.points.toLocaleString() + ' pts';
+
+setBase(S.base);
+</script>
+</body>
+</html>
